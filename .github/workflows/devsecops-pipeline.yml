@@ -25,6 +25,7 @@ jobs:
       - uses: actions/setup-java@v3
         with:
           java-version: '17'
+          distribution: 'temurin'
       - name: Run SonarQube Scan
         run: mvn sonar:sonar -Dsonar.projectKey=java-security-pipeline \
                              -Dsonar.host.url=https://sonarqube.hashedin.com \
