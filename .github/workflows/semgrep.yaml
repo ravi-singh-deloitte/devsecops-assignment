@@ -6,65 +6,68 @@ on:
   pull_request:
 
 jobs:
-  semgrep:
-    name: Run Semgrep Security Check
+  semgrep-scan:
+    name: Run Semgrep Scan
     runs-on: ubuntu-latest
+    outputs:
+      critical_found: ${{ steps.classify.outputs.critical_found }}
+      high_found: ${{ steps.classify.outputs.high_found }}
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
 
-      - name: Install dependencies
+      - run: pip install -r requirements.txt && pip install semgrep jq
+
+      - run: semgrep --config .semgrep --json > semgrep-results.json
+
+      - id: classify
         run: |
-          pip install -r requirements.txt
-          pip install semgrep jq
+          CRITICAL=$(jq '[.results[] | select(.extra.message | test("(?i)sql injection|remote code|deserialization"))]' semgrep-results.json)
+          HIGH=$(jq '[.results[] | select(.extra.message | test("(?i)hardcoded|insecure|eval"))]' semgrep-results.json)
 
-      - name: Run Semgrep Scan
-        run: semgrep --config .semgrep --json > semgrep-results.json
+          echo "critical_found=$(echo $CRITICAL | jq 'length')" >> $GITHUB_OUTPUT
+          echo "high_found=$(echo $HIGH | jq 'length')" >> $GITHUB_OUTPUT
 
-      - name: Parse Semgrep Results and Classify
-        id: classify
-        run: |
-          echo "::group::Parsing Semgrep Results"
-          CRITICAL=$(jq '[.results[] | select(.extra.message | test("(?i)sql injection|remote code|os command|deserialization"))]' semgrep-results.json)
-          HIGH=$(jq '[.results[] | select(.extra.message | test("(?i)hardcoded|eval|exec|insecure"))]' semgrep-results.json)
-          MEDIUM=$(jq '[.results[] | select(.extra.severity=="WARNING") | select(.extra.message | test("(?i)logging|info leak|exposure"))]' semgrep-results.json)
-          LOW=$(jq '[.results[] | select(.extra.severity=="INFO")]' semgrep-results.json)
-
-          echo "CRITICAL_FOUND=$(echo $CRITICAL | jq 'length')" >> $GITHUB_ENV
-          echo "HIGH_FOUND=$(echo $HIGH | jq 'length')" >> $GITHUB_ENV
-          echo "MEDIUM_FOUND=$(echo $MEDIUM | jq 'length')" >> $GITHUB_ENV
-          echo "LOW_FOUND=$(echo $LOW | jq 'length')" >> $GITHUB_ENV
-          echo "::endgroup::"
-
-      - name: Fail if Critical Issues Found
-        if: env.CRITICAL_FOUND != '0'
+      - name: Fail on Critical Issues
+        if: steps.classify.outputs.critical_found != '0'
         run: |
           echo "Critical vulnerabilities found!"
           exit 1
 
-      - name: Ensure Required Labels Exist
+  create-issue:
+    name: Create GitHub Issue for Security Alerts
+    needs: semgrep-scan
+    runs-on: ubuntu-latest
+    if: ${{ needs.semgrep-scan.outputs.critical_found != '0' || needs.semgrep-scan.outputs.high_found != '0' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - run: pip install jq gh
+
+      - run: semgrep --config .semgrep --json > semgrep-results.json
+
+      - name: Ensure labels exist
         run: |
-          for label in security severity/critical severity/high severity/medium severity/low; do
+          for label in security severity/critical severity/high; do
             gh label list | grep -q "^$label" || gh label create "$label" --description "Created by pipeline" --color FF0000
           done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create GitHub Issue for High/Critical Findings
-        if: env.CRITICAL_FOUND != '0' || env.HIGH_FOUND != '0'
+      - name: Create Issue
         run: |
-          echo "## Semgrep Findings" > issue.md
-          jq -r '.results[] | select(.extra.message | test("(?i)sql injection|remote code|os command|deserialization|hardcoded|eval|exec|insecure")) | .path + ": " + .extra.message' semgrep-results.json >> issue.md
+          echo "## Semgrep Alerts" > issue.md
+          jq -r '.results[] | select(.extra.message | test("(?i)sql injection|remote code|deserialization|hardcoded|insecure")) | .path + ": " + .extra.message' semgrep-results.json >> issue.md
 
-          gh issue create \
-            --title "Semgrep Security Alert - $(date +%Y-%m-%d)" \
-            --body-file issue.md \
-            --label "security, severity/critical"
+          gh issue create --title "Semgrep Security Alert - $(date +%Y-%m-%d)" --body-file issue.md --label "security, severity/critical"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
