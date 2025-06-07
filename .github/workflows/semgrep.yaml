@@ -1,0 +1,51 @@
+name: Semgrep Security Scan
+
+on:
+  push:
+    branches: [ques5]
+  pull_request:
+
+jobs:
+  semgrep:
+    name: Run Semgrep Security Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install semgrep
+
+      - name: Run Semgrep with Custom Rules
+        run: |
+          semgrep --config .semgrep --json > semgrep-results.json
+
+      - name: Fail on Critical Findings
+        run: |
+          if grep -q '"severity": "ERROR"' semgrep-results.json; then
+            echo "Critical vulnerabilities found!"
+            exit 1
+          else
+            echo "No critical vulnerabilities found."
+          fi
+
+      - name: Create GitHub Issue for Critical/High Alerts
+        if: always()
+        run: |
+          SEVERITY=$(jq '.results[] | select(.extra.severity=="ERROR" or .extra.severity=="WARNING")' semgrep-results.json)
+          if [ ! -z "$SEVERITY" ]; then
+            echo "##Semgrep Alerts" > issue.md
+            echo "$SEVERITY" | jq -r '.path + ": " + .extra.message' >> issue.md
+            gh issue create --title "Semgrep Alert - $(date)" --body-file issue.md --label "security"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

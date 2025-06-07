@@ -1,0 +1,11 @@
+rules:
+  - id: sql-injection-raw-query
+    patterns:
+      - pattern: cursor.execute($SQL)
+      - pattern-not: cursor.execute("SELECT * FROM users WHERE id = ?", [$ID])
+    message: "Possible SQL injection vulnerability"
+    severity: ERROR
+    languages: [python]
+    metadata:
+      category: security
+      cwe: "CWE-89"
