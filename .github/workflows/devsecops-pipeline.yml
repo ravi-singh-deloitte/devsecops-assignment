@@ -24,8 +24,8 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions/setup-java@v3
         with:
-          java-version: '17'
           distribution: 'temurin'
+          java-version: '17'
       - name: Run SonarQube Scan
         run: mvn sonar:sonar -Dsonar.projectKey=java-security-pipeline \
                              -Dsonar.host.url=https://sonarqube.hashedin.com \
@@ -37,11 +37,18 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Run OWASP Dependency-Check
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: |
           curl -L -o dc.zip https://github.com/jeremylong/DependencyCheck/releases/download/v9.0.7/dependency-check-9.0.7-release.zip
           unzip dc.zip -d dependency-check
           mkdir -p reports
-          ./dependency-check/dependency-check/bin/dependency-check.sh --project JavaApp --scan . --format HTML --out reports
+          ./dependency-check/dependency-check/bin/dependency-check.sh \
+            --project JavaApp \
+            --scan . \
+            --format HTML \
+            --out reports \
+            --nvdApiKey $NVD_API_KEY
       - name: Upload Report to S3
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
