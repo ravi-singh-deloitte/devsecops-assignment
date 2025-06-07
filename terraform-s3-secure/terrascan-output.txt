@@ -1,0 +1,30 @@
+{
+  "results": {
+    "violations": [
+      {
+        "rule_name": "s3Versioning",
+        "description": "Enabling S3 versioning will enable easy recovery from both unintended user actions, like deletes and overwrites",
+        "rule_id": "AC_AWS_0214",
+        "severity": "HIGH",
+        "category": "Resilience",
+        "resource_name": "hu-devops-25-rsingh95-s3",
+        "resource_type": "aws_s3_bucket",
+        "module_name": "root",
+        "file": "main.tf",
+        "plan_root": "./",
+        "line": 5
+      }
+    ],
+    "skipped_violations": null,
+    "scan_summary": {
+      "file/folder": "/mnt/c/Users/rsingh95/Documents/Devops-HU/Day22Devsecops/terraform-s3-secure",
+      "iac_type": "terraform",
+      "scanned_at": "2025-06-07 10:51:42.783677367 +0000 UTC",
+      "policies_validated": 10,
+      "violated_policies": 1,
+      "low": 0,
+      "medium": 0,
+      "high": 1
+    }
+  }
+}
