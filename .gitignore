@@ -1,0 +1,6 @@
+*.env
+*.jar
+target/
+bin/
+trivy-scan.*
+dependency-check-report.*

@@ -1,0 +1,69 @@
+name: DevSecOps Pipeline
+
+on:
+  push:
+    branches: [feature-1]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - name: Build with Maven
+        run: mvn clean package -DskipTests
+
+  sonar:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+      - name: Run SonarQube Scan
+        run: mvn sonar:sonar -Dsonar.projectKey=java-security-pipeline \
+                             -Dsonar.host.url=https://sonarqube.hashedin.com \
+                             -Dsonar.login=${{ secrets.SONAR_TOKEN }}
+
+  dependency-check:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v3
+      - name: Run OWASP Dependency-Check
+        run: |
+          curl -L -o dc.zip https://github.com/jeremylong/DependencyCheck/releases/download/v9.0.7/dependency-check-9.0.7-release.zip
+          unzip dc.zip -d dependency-check
+          mkdir -p reports
+          ./dependency-check/dependency-check/bin/dependency-check.sh --project JavaApp --scan . --format HTML --out reports
+      - name: Upload Report to S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: us-east-1
+        run: aws s3 cp reports/dependency-check-report.html s3://hu-devops-25-rsingh95-scan-reports/
+
+  trivy-scan:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build Docker Image
+        run: docker build -t java-app ./docker
+      - name: Trivy Scan
+        run: |
+          mkdir -p trivy-reports
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                     -v ${{ github.workspace }}/trivy-reports:/output \
+                     aquasec/trivy image java-app --format html --output /output/trivy-report.html
+      - name: Upload Trivy Report to S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: us-east-1
+        run: aws s3 cp trivy-reports/trivy-report.html s3://hu-devops-25-rsingh95-scan-reports/
