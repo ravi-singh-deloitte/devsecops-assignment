@@ -1,0 +1,44 @@
+name: Secure S3 Checks
+
+on:
+  push:
+    branches: [feature-2]
+  pull_request:
+    branches: [main]
+
+jobs:
+  security-checks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install Checkov
+        run: pip install checkov
+
+      - name: Run Checkov on Terraform
+        run: |
+          checkov -d terraform/s3-secure -o cli --output-file-path checkov-report.txt
+
+      - name: Install TfLint
+        run: |
+          curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
+
+      - name: Run TfLint
+        run: |
+          tflint --init
+          tflint terraform/s3-secure > tflint-report.txt
+
+      - name: Upload reports to S3
+        env:
+          AWS_REGION: us-east-1
+          BUCKET_NAME: hu-devops-25-rsingh95-secure-bucket
+        run: |
+          aws s3 cp checkov-report.txt s3://$BUCKET_NAME/reports/checkov-report.txt
+          aws s3 cp tflint-report.txt s3://$BUCKET_NAME/reports/tflint-report.txt
