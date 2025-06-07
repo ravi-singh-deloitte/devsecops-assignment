@@ -14,7 +14,6 @@ jobs:
       high_count: ${{ steps.classify.outputs.high }}
       medium_count: ${{ steps.classify.outputs.medium }}
       low_count: ${{ steps.classify.outputs.low }}
-      critical_found: ${{ steps.classify.outputs.critical != '0' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -44,13 +43,15 @@ jobs:
           echo "medium=$(echo $MEDIUM | jq 'length')" >> $GITHUB_OUTPUT
           echo "low=$(echo $LOW | jq 'length')" >> $GITHUB_OUTPUT
 
-      - name: Set Fail Flag for Critical Vulnerabilities
+      - name: Fail on Critical Vulnerabilities
         if: steps.classify.outputs.critical != '0'
-        run: echo "Critical vulnerabilities found!"
+        run: |
+          echo "Critical vulnerabilities found!"
+          exit 1
         continue-on-error: true
 
   create-issue:
-    name: Create GitHub Issue if Vulnerabilities Found
+    name: Create GitHub Issue if Medium or Higher Vulnerabilities Found
     needs: semgrep-scan
     runs-on: ubuntu-latest
     if: always() && (
@@ -76,12 +77,29 @@ jobs:
         run: |
           echo "## Semgrep Vulnerability Report" > issue.md
 
-          jq -r '.results[] | select(.extra.message | test("(?i)sql injection|remote code|deserialization|command injection")) | "**[CRITICAL]** " + .path + ": " + .extra.message' semgrep-results.json >> issue.md
-          jq -r '.results[] | select(.extra.message | test("(?i)hardcoded|eval|insecure http")) | "**[HIGH]** " + .path + ": " + .extra.message' semgrep-results.json >> issue.md
-          jq -r '.results[] | select(.extra.message | test("(?i)weak hash|no input validation")) | "**[MEDIUM]** " + .path + ": " + .extra.message' semgrep-results.json >> issue.md
+          CRITICAL=$(jq -r '.results[] | select(.extra.message | test("(?i)sql injection|remote code|deserialization|command injection")) | "**[CRITICAL]** " + .path + ": " + .extra.message' semgrep-results.json)
+          HIGH=$(jq -r '.results[] | select(.extra.message | test("(?i)hardcoded|eval|insecure http")) | "**[HIGH]** " + .path + ": " + .extra.message' semgrep-results.json)
+          MEDIUM=$(jq -r '.results[] | select(.extra.message | test("(?i)weak hash|no input validation")) | "**[MEDIUM]** " + .path + ": " + .extra.message' semgrep-results.json)
 
-          gh issue create --title "Semgrep Security Alert - $(date +%Y-%m-%d)" \
+          echo "$CRITICAL" >> issue.md
+          echo "$HIGH" >> issue.md
+          echo "$MEDIUM" >> issue.md
+
+          LABELS="security"
+
+          if [[ -n "$CRITICAL" ]]; then
+            LABELS="$LABELS,severity/critical"
+          elif [[ -n "$HIGH" ]]; then
+            LABELS="$LABELS,severity/high"
+          elif [[ -n "$MEDIUM" ]]; then
+            LABELS="$LABELS,severity/medium"
+          else
+            LABELS="$LABELS,severity/low"
+          fi
+
+          gh issue create \
+            --title "Semgrep Security Alert - $(date +%Y-%m-%d)" \
             --body-file issue.md \
-            --label "security,severity/critical,severity/high,severity/medium"
+            --label "$LABELS"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
