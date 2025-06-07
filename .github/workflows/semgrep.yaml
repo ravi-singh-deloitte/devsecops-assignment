@@ -65,31 +65,12 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Install tools
-        run: pip install semgrep jq
-
-      - name: Install GitHub CLI
+      - name: Install Dependencies
         run: |
-          sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key C99B11DEB97541F0
-          sudo apt-add-repository https://cli.github.com/packages
-          sudo apt update
-          sudo apt install gh -y
-
-      - name: Authenticate GitHub CLI
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
+          pip install semgrep jq
 
       - name: Run Semgrep Again
         run: semgrep --config .semgrep --json > semgrep-results.json
-
-      - name: Create Labels if Missing
-        run: |
-          for label in security "severity/critical" "severity/high" "severity/medium" "severity/low"; do
-            if ! gh label list | grep -q "^$label"; then
-              gh label create "$label" --description "Auto-created by pipeline" --color FF0000 || true
-            fi
-          done
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create GitHub Issue
         run: |
